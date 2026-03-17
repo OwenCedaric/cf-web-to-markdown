@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web to Markdown</title>
+    <!-- 使用 Inter 模拟瑞标风格经常使用的 Akzidenz-Grotesk 或 Helvetica -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --text: #000000;
+            --text-muted: #666666;
+            --border: #000000;
+            --accent: #ff3e00; /* 瑞士设计中常见的鲜艳强调色 */
+            --grid-gap: 20px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.1;
+            padding: 40px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: var(--grid-gap);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            grid-column: span 12;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 40px;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 8vw;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            text-transform: uppercase;
+            line-height: 0.9;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            margin-top: 20px;
+            font-weight: 400;
+            color: var(--text-muted);
+            max-width: 600px;
+            line-height: 1.4;
+        }
+
+        main {
+            grid-column: span 12;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: var(--grid-gap);
+        }
+
+        .input-section {
+            grid-column: span 4;
+        }
+
+        .result-section {
+            grid-column: span 8;
+        }
+
+        @media (max-width: 900px) {
+            .input-section, .result-section {
+                grid-column: span 12;
+            }
+            h1 { font-size: 12vw; }
+        }
+
+        .label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            display: block;
+            letter-spacing: 0.1em;
+        }
+
+        input {
+            width: 100%;
+            border: 2px solid var(--border);
+            padding: 15px;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: background 0.2s;
+        }
+
+        input:focus {
+            background-color: #f0f0f0;
+        }
+
+        button {
+            margin-top: 20px;
+            width: 100%;
+            background-color: var(--text);
+            color: var(--bg);
+            border: none;
+            padding: 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--accent);
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: wait;
+        }
+
+        #result-container {
+            display: none;
+            border: 2px solid var(--border);
+            padding: 0;
+            min-height: 400px;
+            position: relative;
+        }
+
+        .result-toolbar {
+            border-bottom: 2px solid var(--border);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        pre {
+            padding: 20px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.5;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .status {
+            margin-top: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .status.error { color: var(--accent); }
+
+        .copy-trigger {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        /* 响应式网格线辅助（可选） */
+        .layout::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: linear-gradient(to right, rgba(0,0,0,0.02) 1px, transparent 1px);
+            background-size: calc(100% / 12) 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <header>
+            <h1>WEB-TO-<br>MARKDOWN</h1>
+            <p class="subtitle">A minimalist tool to convert any webpage into clean markdown using Cloudflare's Browser Rendering API.</p>
+        </header>
+
+        <main>
+            <section class="input-section">
+                <span class="label">Target URL / 目标网址</span>
+                <input type="url" id="url-input" placeholder="https://example.com" autofocus>
+                <button id="convert-btn">Convert / 转换</button>
+                <div id="status" class="status"></div>
+            </section>
+
+            <section class="result-section">
+                <div id="result-container">
+                    <div class="result-toolbar">
+                        <span class="label" style="margin-bottom:0">Output / 输出结果</span>
+                        <span class="copy-trigger" id="copy-btn">Copy / 复制</span>
+                    </div>
+                    <pre id="result-content"></pre>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const urlInput = document.getElementById('url-input');
+        const convertBtn = document.getElementById('convert-btn');
+        const status = document.getElementById('status');
+        const resultContainer = document.getElementById('result-container');
+        const resultContent = document.getElementById('result-content');
+        const copyBtn = document.getElementById('copy-btn');
+
+        convertBtn.addEventListener('click', async () => {
+            const targetUrl = urlInput.value.trim();
+            if (!targetUrl) {
+                showStatus('Missing URL', 'error');
+                return;
+            }
+
+            setLoading(true);
+            showStatus('Processing...', '');
+            resultContainer.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/markdown?url=' + encodeURIComponent(targetUrl));
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const markdown = await response.text();
+                resultContent.textContent = markdown;
+                resultContainer.style.display = 'block';
+                showStatus('Success', '');
+            } catch (err) {
+                showStatus('Error: ' + err.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(resultContent.textContent).then(() => {
+                const originalText = copyBtn.innerText;
+                copyBtn.innerText = 'Copied!';
+                setTimeout(() => copyBtn.innerText = originalText, 2000);
+            });
+        });
+
+        function setLoading(isLoading) {
+            convertBtn.disabled = isLoading;
+            convertBtn.innerText = isLoading ? 'Converting...' : 'Convert / 转换';
+        }
+
+        function showStatus(msg, type) {
+            status.textContent = msg;
+            status.className = 'status ' + type;
+        }
+
+        // Enter key support
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') convertBtn.click();
+        });
+    </script>
+</body>
+</html>

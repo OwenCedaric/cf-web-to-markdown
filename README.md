@@ -47,15 +47,24 @@ pnpm deploy
 ## API 使用
 
 ### GET 请求
+`/api/markdown?url=https://example.com`
+
+或者直接在根路径访问：
 `/?url=https://example.com`
 
 ### POST 请求
-发送 JSON 正文：
+向 `/api/markdown` 发送 JSON 正文：
 ```json
 {
   "url": "https://example.com"
 }
 ```
+
+## 项目结构
+
+- `public/`: 存放前端静态资源 (Swiss Style UI)
+- `src/`: 运行在 Cloudflare Workers 上的后端 API
+- `wrangler.toml`: 项目配置文件
 
 ## 许可证
 
