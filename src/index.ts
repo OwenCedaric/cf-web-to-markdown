@@ -17,15 +17,14 @@ export default {
             } catch (e) { }
         }
 
-        // 2. Routing Decision: If targetUrl exists and is not empty, it's an API call
+        // 2. Main API Logic: If url parameter matches, prioritized it
         if (targetUrl && targetUrl.trim() !== '') {
             const accountId = env.CLOUDFLARE_ACCOUNT_ID;
             const apiToken = env.CLOUDFLARE_API_TOKEN;
 
             if (!accountId || !apiToken) {
-                console.error('Configuration missing: accountId or apiToken');
-                // Return frontend on configuration error as requested
-                return env.ASSETS.fetch(request);
+                console.error('Configuration missing');
+                return this.serveFrontend(request, env);
             }
 
             const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/markdown`;
@@ -40,32 +39,41 @@ export default {
                     body: JSON.stringify({ url: targetUrl }),
                 });
 
-                if (!response.ok) {
-                    const error = await response.text();
-                    console.error('API Error:', error);
-                    // Return frontend on API error as requested
-                    return env.ASSETS.fetch(request);
+                if (response.ok) {
+                    const data = (await response.json()) as { success: boolean, result: string };
+                    if (data.success && data.result) {
+                        return new Response(data.result, {
+                            headers: {
+                                'Content-Type': 'text/markdown; charset=utf-8',
+                                'Access-Control-Allow-Origin': '*',
+                            },
+                        });
+                    }
                 }
-
-                const data = (await response.json()) as { success: boolean, result: string };
-                if (data.success && data.result) {
-                    return new Response(data.result, {
-                        headers: {
-                            'Content-Type': 'text/markdown; charset=utf-8',
-                            'Access-Control-Allow-Origin': '*',
-                        },
-                    });
-                } else {
-                    console.error('Processing failed or result empty');
-                    return env.ASSETS.fetch(request);
-                }
+                
+                // If conversion fails, log and fallback to frontend
+                console.error(`Conversion failed for ${targetUrl}`);
+                return this.serveFrontend(request, env);
             } catch (error) {
-                console.error('Conversion error:', error);
-                return env.ASSETS.fetch(request);
+                console.error('Conversion exception:', error);
+                return this.serveFrontend(request, env);
             }
         }
 
-        // 3. Delegation: Serve the static frontend (Status 200)
-        return env.ASSETS.fetch(request);
+        // 3. Serve Frontend Logic
+        return this.serveFrontend(request, env);
     },
+
+    async serveFrontend(request: Request, env: Env): Promise<Response> {
+        const url = new URL(request.url);
+        
+        // If the path is root, explicitly fetch ui.html
+        if (url.pathname === '/') {
+            const uiRequest = new Request(new URL('/ui.html', request.url), request);
+            return env.ASSETS.fetch(uiRequest);
+        }
+
+        // Otherwise, fallback to the requested asset
+        return env.ASSETS.fetch(request);
+    }
 };
