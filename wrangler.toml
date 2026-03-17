@@ -11,3 +11,4 @@ binding = "BROWSER"
 
 [assets]
 directory = "./public"
+binding = "ASSETS"
