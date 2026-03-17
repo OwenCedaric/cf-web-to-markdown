@@ -1,41 +1,37 @@
 export interface Env {
-	BROWSER: Fetcher;
+	BROWSER: any; // Using any to avoid Fetcher types issue if not globally defined
 	CLOUDFLARE_ACCOUNT_ID: string;
 	CLOUDFLARE_API_TOKEN: string;
 }
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
 		const url = new URL(request.url);
+		let targetUrl = url.searchParams.get('url');
 
-		// Only handle calls to /api/markdown or direct ?url= calls if needed
-		// Assets are served automatically for other routes
-		if (url.pathname === '/api/markdown' || url.searchParams.has('url')) {
-			let targetUrl = url.searchParams.get('url');
+		// Handle POST requests for /api/markdown
+		if (!targetUrl && request.method === 'POST' && url.pathname === '/api/markdown') {
+			try {
+				const body = (await request.json()) as { url?: string };
+				targetUrl = body.url || null;
+			} catch (e) {}
+		}
 
-			// Also try to get URL from JSON body for POST requests
-			if (!targetUrl && request.method === 'POST') {
-				try {
-					const body = (await request.json()) as { url?: string };
-					targetUrl = body.url || null;
-				} catch (e) {
-					// Ignore JSON parsing errors
-				}
-			}
+		// RULE: If no url parameter is present or it's empty, return 404 to let static assets take over
+		if (!targetUrl || targetUrl.trim() === '') {
+			return new Response('Not Found', { status: 404 });
+		}
 
-			if (!targetUrl) {
-				return new Response('Missing "url" parameter', { status: 400 });
-			}
+		// Cloudflare Browser Rendering API logic
+		const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+		const apiToken = env.CLOUDFLARE_API_TOKEN;
 
-			// Cloudflare Browser Rendering API endpoint
-			const accountId = env.CLOUDFLARE_ACCOUNT_ID;
-			const apiToken = env.CLOUDFLARE_API_TOKEN;
+		if (!accountId || !apiToken) {
+			// If missing config, we return an error because the user did provide a URL
+			return new Response('Worker not configured: CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN is missing', { status: 500 });
+		}
 
-			if (!accountId || !apiToken) {
-				return new Response('Worker not configured: CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN is missing', { status: 500 });
-			}
-
-			const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/markdown`;
+		const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/markdown`;
 
 			try {
 				const response = await fetch(apiUrl, {
@@ -44,14 +40,12 @@ export default {
 						'Content-Type': 'application/json',
 						'Authorization': `Bearer ${apiToken}`,
 					},
-					body: JSON.stringify({
-						url: targetUrl,
-					}),
+					body: JSON.stringify({ url: targetUrl }),
 				});
 
 				if (!response.ok) {
-					const errorData = (await response.json()) as any;
-					return new Response(`API Error: ${errorData.errors?.[0]?.message || response.statusText}`, { status: response.status });
+					// Fallback to frontend on API error
+					return new Response('Not Found', { status: 404 });
 				}
 
 				const data = (await response.json()) as { success: boolean, result: string };
@@ -64,15 +58,12 @@ export default {
 						},
 					});
 				} else {
-					return new Response('Processing failed', { status: 500 });
+					// Fallback to frontend on processing failure
+					return new Response('Not Found', { status: 404 });
 				}
-
 			} catch (error) {
-				return new Response(`Error: ${error instanceof Error ? error.message : String(error)}`, { status: 500 });
+				// Fallback to frontend on network/logic error
+				return new Response('Not Found', { status: 404 });
 			}
-		}
-
-		// Fallback for asset serving (usually handled by Wrangler anyway)
-		return new Response('Not Found', { status: 404 });
 	},
 };
