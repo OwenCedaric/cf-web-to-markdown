@@ -1,0 +1,17 @@
+{
+  "name": "cf-web-to-markdown",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "dependencies": {
+    "cloudflare": "^2.0.0"
+  }
+}
