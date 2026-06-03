@@ -20,12 +20,14 @@ export default {
 
         const url = new URL(request.url);
         let targetUrl = url.searchParams.get('url');
+        let service = url.searchParams.get('service');
 
         // --- 2. 解析 POST 请求体 ---
         if (!targetUrl && request.method === 'POST') {
             try {
-                const body = (await request.json()) as { url?: string };
-                targetUrl = body.url || null;
+                const body = (await request.json()) as { url?: string, service?: string };
+                targetUrl = body.url || targetUrl;
+                service = body.service || service;
             } catch (e) {
                 console.warn('Failed to parse POST body');
             }
@@ -47,62 +49,92 @@ export default {
             const accountId = env.CLOUDFLARE_ACCOUNT_ID;
             const apiToken = env.CLOUDFLARE_API_TOKEN;
 
-            if (!accountId || !apiToken) {
-                console.error('Configuration missing');
-                return this.serveFrontend(request, env);
+            if (service === 'jina') {
+                try {
+                    const md = await this.fetchFallback(`https://r.jina.ai/${targetUrl}`, new AbortController().signal);
+                    return this.createMarkdownResponse(md);
+                } catch (error) {
+                    return new Response(`Jina conversion failed: ${error instanceof Error ? error.message : String(error)}`, { status: 500 });
+                }
+            }
+
+            if (service === 'defuddle') {
+                try {
+                    const md = await this.fetchFallback(`https://defuddle.md/${targetUrl}`, new AbortController().signal);
+                    return this.createMarkdownResponse(md);
+                } catch (error) {
+                    return new Response(`Defuddle conversion failed: ${error instanceof Error ? error.message : String(error)}`, { status: 500 });
+                }
             }
 
             // 阶段 1: 尝试主服务 (Cloudflare Browser Rendering)
-            const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/markdown`;
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiToken}`,
-                    },
-                    body: JSON.stringify({ url: targetUrl }),
-                });
+            if (!service || service === 'auto' || service === 'cloudflare') {
+                if (!accountId || !apiToken) {
+                    console.error('Configuration missing');
+                    if (service === 'cloudflare') {
+                        return new Response('Cloudflare configuration missing', { status: 500 });
+                    }
+                } else {
+                    const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/markdown`;
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${apiToken}`,
+                            },
+                            body: JSON.stringify({ url: targetUrl }),
+                        });
 
-                if (response.ok) {
-                    const data = (await response.json()) as { success: boolean, result: string };
-                    if (data.success && data.result) {
-                        return this.createMarkdownResponse(data.result);
+                        if (response.ok) {
+                            const data = (await response.json()) as { success: boolean, result: string };
+                            if (data.success && data.result) {
+                                return this.createMarkdownResponse(data.result);
+                            }
+                        }
+                        console.error(`Cloudflare API conversion failed for ${targetUrl}`);
+                        if (service === 'cloudflare') {
+                            return new Response('Cloudflare API conversion failed', { status: 500 });
+                        }
+                    } catch (error) {
+                        console.error('Cloudflare API conversion exception:', error);
+                        if (service === 'cloudflare') {
+                            return new Response(`Cloudflare API conversion exception: ${error instanceof Error ? error.message : String(error)}`, { status: 500 });
+                        }
                     }
                 }
-                console.error(`Cloudflare API conversion failed for ${targetUrl}`);
-            } catch (error) {
-                console.error('Cloudflare API conversion exception:', error);
             }
 
             // 阶段 2: 降级服务竞速 (Promise.any)
-            console.log(`Starting fallback race for ${targetUrl}`);
-            const fallbackServices = [
-                `https://r.jina.ai/${targetUrl}`,
-                `https://defuddle.md/${targetUrl}`
-            ];
+            if (!service || service === 'auto') {
+                console.log(`Starting fallback race for ${targetUrl}`);
+                const fallbackServices = [
+                    `https://r.jina.ai/${targetUrl}`,
+                    `https://defuddle.md/${targetUrl}`
+                ];
 
-            // 核心优化：用于在竞速结束后杀死其他挂起请求的 Controller
-            const raceController = new AbortController(); 
+                const raceController = new AbortController(); 
 
-            try {
-                const fastestMarkdown = await Promise.any(
-                    fallbackServices.map(serviceUrl => 
-                        this.fetchFallback(serviceUrl, raceController.signal)
-                    )
-                );
-                
-                // 竞速结束，立刻终止仍在运行的其他请求，防止 Worker 资源泄漏
-                raceController.abort(); 
-                return this.createMarkdownResponse(fastestMarkdown);
-            } catch (error) {
-                raceController.abort();
-                console.error(`All fallback services failed for ${targetUrl}:`, error);
+                try {
+                    const fastestMarkdown = await Promise.any(
+                        fallbackServices.map(serviceUrl => 
+                            this.fetchFallback(serviceUrl, raceController.signal)
+                        )
+                    );
+                    
+                    raceController.abort(); 
+                    return this.createMarkdownResponse(fastestMarkdown);
+                } catch (error) {
+                    raceController.abort();
+                    console.error(`All fallback services failed for ${targetUrl}:`, error);
+                }
             }
 
             // 阶段 3: 终极兜底
-            console.error(`All conversion methods failed for ${targetUrl}, falling back to frontend.`);
-            return this.serveFrontend(request, env);
+            if (!service || service === 'auto') {
+                console.error(`All conversion methods failed for ${targetUrl}, falling back to frontend.`);
+                return this.serveFrontend(request, env);
+            }
         }
 
         // 5. 兜底返回前端页面

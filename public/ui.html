@@ -72,18 +72,11 @@
             gap: var(--grid-gap);
         }
 
-        .input-section {
-            grid-column: span 4;
-        }
-
-        .result-section {
-            grid-column: span 8;
+        .input-section, .result-section {
+            grid-column: span 12;
         }
 
         @media (max-width: 900px) {
-            .input-section, .result-section {
-                grid-column: span 12;
-            }
             h1 { font-size: 12vw; }
         }
 
@@ -96,32 +89,76 @@
             letter-spacing: 0.1em;
         }
 
-        input {
+        .input-row {
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-group:nth-child(1) {
+            flex: 4;
+        }
+
+        .input-group:nth-child(2) {
+            flex: 2;
+        }
+
+        .input-row > button {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 900px) {
+            .input-row {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 20px;
+            }
+            .input-group:nth-child(1),
+            .input-group:nth-child(2),
+            .input-row > button {
+                flex: none;
+            }
+        }
+
+        input, select {
             width: 100%;
+            height: 60px;
             border: 2px solid var(--border);
-            padding: 15px;
+            padding: 0 15px;
             font-family: inherit;
             font-size: 1rem;
             outline: none;
             transition: background 0.2s;
+            background-color: var(--bg);
+            border-radius: 0;
         }
 
-        input:focus {
+        input:focus, select:focus {
             background-color: #f0f0f0;
         }
 
         button {
-            margin-top: 20px;
             width: 100%;
+            height: 60px;
             background-color: var(--text);
             color: var(--bg);
-            border: none;
-            padding: 20px;
+            border: 2px solid var(--text);
+            padding: 0 20px;
             font-size: 1rem;
             font-weight: 600;
             text-transform: uppercase;
             cursor: pointer;
             transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         button:hover {
@@ -197,9 +234,25 @@
 
         <main>
             <section class="input-section">
-                <span class="label">Target URL / 目标网址</span>
-                <input type="url" id="url-input" placeholder="https://example.com" autofocus>
-                <button id="convert-btn">Convert / 转换</button>
+                <div class="input-row">
+                    <div class="input-group">
+                        <span class="label">Target URL / 目标网址</span>
+                        <input type="url" id="url-input" placeholder="https://example.com" autofocus>
+                    </div>
+                    
+                    <div class="input-group">
+                        <span class="label">API / 转换服务</span>
+                        <select id="api-select">
+                            <option value="auto">Auto</option>
+                            <option value="cloudflare">Cloudflare</option>
+                            <option value="jina">Jina Reader</option>
+                            <option value="defuddle">Defuddle</option>
+                        </select>
+                    </div>
+
+                    <button id="convert-btn">Convert / 转换</button>
+                </div>
+
                 <div id="status" class="status"></div>
             </section>
 
@@ -217,6 +270,7 @@
 
     <script>
         const urlInput = document.getElementById('url-input');
+        const apiSelect = document.getElementById('api-select');
         const convertBtn = document.getElementById('convert-btn');
         const status = document.getElementById('status');
         const resultContainer = document.getElementById('result-container');
@@ -225,6 +279,7 @@
 
         convertBtn.addEventListener('click', async () => {
             const targetUrl = urlInput.value.trim();
+            const service = apiSelect.value;
             if (!targetUrl) {
                 showStatus('Missing URL', 'error');
                 return;
@@ -235,7 +290,7 @@
             resultContainer.style.display = 'none';
 
             try {
-                const response = await fetch('/api/markdown?url=' + encodeURIComponent(targetUrl));
+                const response = await fetch('/api/markdown?url=' + encodeURIComponent(targetUrl) + '&service=' + encodeURIComponent(service));
                 if (!response.ok) {
                     const error = await response.text();
                     throw new Error(error);
